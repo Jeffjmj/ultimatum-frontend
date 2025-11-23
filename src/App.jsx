@@ -6,7 +6,6 @@ import {
 
 // ==========================================
 // 🔴 IMPORTANT: PASTE YOUR RAILWAY URL HERE
-// Example: "https://ultimatum-game-production.up.railway.app"
 // ==========================================
 const API_URL = "https://ultimatum-production.up.railway.app"; 
 
@@ -26,26 +25,20 @@ const GameApp = () => {
     pairings: {}
   });
   
-  // Participant & User Info
   const [myGame, setMyGame] = useState(null);
   const [myPlayerInfo, setMyPlayerInfo] = useState(null);
   const [roleInfo, setRoleInfo] = useState({});
   const [playerCount, setPlayerCount] = useState(0);
-
-  // Researcher Data
   const [fullData, setFullData] = useState(null);
 
-  // --- 1. Polling System ---
+  // --- Polling ---
   useEffect(() => {
     if (!userId) return;
 
     const fetchData = async () => {
       try {
-        // Determine polling strategy based on Role
         const amIResearcher = myPlayerInfo?.role === 'RESEARCHER';
-
         if (amIResearcher) {
-          // RESEARCHER: Get everything
           const response = await fetch(`${API_URL}/export_data`);
           if (response.ok) {
             const data = await response.json();
@@ -54,7 +47,6 @@ const GameApp = () => {
             setPlayerCount(Object.keys(data.all_players || {}).length);
           }
         } else {
-          // PARTICIPANT: Get my specific data
           const response = await fetch(`${API_URL}/state?uid=${userId}`);
           if (response.ok) {
             const data = await response.json();
@@ -66,39 +58,31 @@ const GameApp = () => {
           }
         }
       } catch (error) {
-        console.error("Connection error. Check API_URL.", error);
+        console.error("Connection error:", error);
       }
     };
 
     fetchData();
-    const interval = setInterval(fetchData, 1000); // Poll every 1s
+    const interval = setInterval(fetchData, 1000);
     return () => clearInterval(interval);
   }, [userId, myPlayerInfo?.role]);
 
 
-  // --- 2. Actions ---
-
+  // --- Actions ---
   const registerUser = async () => {
     if (!userName.trim()) return;
     setLoading(true);
     const newUid = crypto.randomUUID();
-    
     try {
       const res = await fetch(`${API_URL}/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-            uid: newUid, 
-            name: userName
-        })
+        body: JSON.stringify({ uid: newUid, name: userName })
       });
-      
       if (res.ok) {
           const data = await res.json();
           setMyPlayerInfo(data.player);
           setUserId(newUid);
-      } else {
-        alert("Failed to join. Check URL.");
       }
     } catch (e) {
       alert("Error connecting to server.");
@@ -162,9 +146,8 @@ const GameApp = () => {
   };
 
 
-  // --- 3. Views ---
+  // --- Views ---
 
-  // A. Registration
   if (!userId) {
     return (
       <div className="flex h-screen items-center justify-center bg-slate-50 p-4">
@@ -175,32 +158,25 @@ const GameApp = () => {
           <h1 className="mb-2 text-center text-2xl font-bold text-slate-800">Ultimatum Game</h1>
           <p className="mb-6 text-center text-slate-500">
             Enter your name to join. <br/>
-            <span className="text-xs text-slate-400">(First 3 logins become Researchers)</span>
+            <span className="text-xs text-slate-400">(First 3 logins become Admins)</span>
           </p>
-          
-          <input 
-            type="text" 
-            placeholder="Full Name" 
-            className="mb-6 w-full rounded-lg border border-slate-300 p-3 outline-none focus:border-blue-500" 
-            value={userName} 
-            onChange={(e) => setUserName(e.target.value)} 
-          />
-          
+          <input type="text" placeholder="Full Name" className="mb-6 w-full rounded-lg border border-slate-300 p-3 outline-none focus:border-blue-500" value={userName} onChange={(e) => setUserName(e.target.value)} />
           <button onClick={registerUser} disabled={!userName || loading} className="w-full rounded-lg bg-blue-600 py-3 font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
             {loading ? "Connecting..." : "Join Experiment"}
           </button>
-          
           {API_URL.includes("INSERT") && <p className="mt-4 text-center text-xs text-red-500 font-bold">⚠️ SET API_URL IN CODE</p>}
         </div>
       </div>
     );
   }
 
-  // B. Researcher Dashboard
+  // Researcher Dashboard
   if (myPlayerInfo?.role === 'RESEARCHER') {
     const gamesList = fullData?.all_games ? Object.values(fullData.all_games) : [];
     const playersList = fullData?.all_players || {};
-    const sortedGames = gamesList.reverse(); // Newest first
+    
+    // Sort by creation time (Newest first)
+    const sortedGames = gamesList.sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
 
     return (
       <div className="min-h-screen bg-slate-100 p-6">
@@ -216,7 +192,6 @@ const GameApp = () => {
         </header>
 
         <div className="grid gap-6 md:grid-cols-3 mb-8">
-          {/* Controls */}
           <div className="rounded-xl bg-white p-5 shadow-sm md:col-span-2">
             <h2 className="mb-4 text-sm font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2"><Play className="w-4 h-4"/> Flow Controls</h2>
             <div className="grid grid-cols-3 gap-4">
@@ -233,7 +208,6 @@ const GameApp = () => {
             </div>
           </div>
 
-          {/* Admin Tools */}
           <div className="rounded-xl bg-white p-5 shadow-sm">
              <h2 className="mb-4 text-sm font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2"><Database className="w-4 h-4"/> Admin</h2>
              <div className="space-y-3">
@@ -247,15 +221,14 @@ const GameApp = () => {
           </div>
         </div>
 
-        {/* Live Data Table */}
         <div className="rounded-xl bg-white shadow-sm overflow-hidden">
           <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex justify-between items-center">
              <h2 className="font-bold text-slate-700 flex items-center gap-2"><FileText className="w-5 h-5 text-slate-400"/> Live Game Feed</h2>
              <span className="text-xs font-mono text-slate-400 flex items-center gap-1"><RefreshCw className="w-3 h-3 animate-spin"/> Live</span>
           </div>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
             <table className="w-full text-left text-sm text-slate-600">
-              <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+              <thead className="bg-slate-50 text-xs uppercase text-slate-500 sticky top-0 z-10">
                 <tr>
                   <th className="px-6 py-3">Round</th>
                   <th className="px-6 py-3">Proposer</th>
@@ -273,7 +246,7 @@ const GameApp = () => {
                     const rName = playersList[g.responder]?.name || '...';
                     return (
                       <tr key={g.id} className="hover:bg-slate-50">
-                         <td className="px-6 py-4 font-mono text-xs"><span className="rounded bg-slate-200 px-1">T{g.id.split('_')[1]}</span> R{g.id.split('_')[2]}</td>
+                         <td className="px-6 py-4 font-mono text-xs"><span className="rounded bg-slate-200 px-1">T{g.treatment}</span> R{g.round}</td>
                          <td className="px-6 py-4 font-medium text-blue-700">{pName}</td>
                          <td className="px-6 py-4 font-bold">{g.offer !== null ? `$${g.offer}` : '...'}</td>
                          <td className="px-6 py-4 font-medium text-purple-700">{rName}</td>
@@ -294,7 +267,7 @@ const GameApp = () => {
     );
   }
 
-  // C. Lobby (Participant)
+  // Lobby (Participant)
   if (gameState.status === 'LOBBY' || gameState.status === 'WAITING_NEXT_PHASE') {
     return (
       <div className="flex h-screen flex-col items-center justify-center bg-slate-50 text-center">
@@ -305,7 +278,7 @@ const GameApp = () => {
     );
   }
 
-  // D. Active Game (Participant View)
+  // Active Game (Participant View)
   const role = roleInfo?.role;
   const partnerName = roleInfo?.partner_name;
   const displayName = gameState.treatment === 1 ? "Anonymous Partner" : partnerName;
