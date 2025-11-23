@@ -15,7 +15,6 @@ const ENDOWMENT = 10;
 const GameApp = () => {
   const [userId, setUserId] = useState(null);
   const [userName, setUserName] = useState('');
-  const [isResearcher, setIsResearcher] = useState(false);
   const [loading, setLoading] = useState(false);
   
   // App State
@@ -27,14 +26,14 @@ const GameApp = () => {
     pairings: {}
   });
   
-  // Participant State
+  // Participant & User Info
   const [myGame, setMyGame] = useState(null);
   const [myPlayerInfo, setMyPlayerInfo] = useState(null);
   const [roleInfo, setRoleInfo] = useState({});
   const [playerCount, setPlayerCount] = useState(0);
 
-  // Researcher State
-  const [fullData, setFullData] = useState(null); // Stores all games/players for Admin
+  // Researcher Data
+  const [fullData, setFullData] = useState(null);
 
   // --- 1. Polling System ---
   useEffect(() => {
@@ -42,8 +41,11 @@ const GameApp = () => {
 
     const fetchData = async () => {
       try {
-        if (isResearcher) {
-          // RESEARCHER: Poll the full dataset
+        // Determine polling strategy based on Role
+        const amIResearcher = myPlayerInfo?.role === 'RESEARCHER';
+
+        if (amIResearcher) {
+          // RESEARCHER: Get everything
           const response = await fetch(`${API_URL}/export_data`);
           if (response.ok) {
             const data = await response.json();
@@ -52,7 +54,7 @@ const GameApp = () => {
             setPlayerCount(Object.keys(data.all_players || {}).length);
           }
         } else {
-          // PARTICIPANT: Poll personal state
+          // PARTICIPANT: Get my specific data
           const response = await fetch(`${API_URL}/state?uid=${userId}`);
           if (response.ok) {
             const data = await response.json();
@@ -64,14 +66,14 @@ const GameApp = () => {
           }
         }
       } catch (error) {
-        console.error("Connection error:", error);
+        console.error("Connection error. Check API_URL.", error);
       }
     };
 
     fetchData();
     const interval = setInterval(fetchData, 1000); // Poll every 1s
     return () => clearInterval(interval);
-  }, [userId, isResearcher]);
+  }, [userId, myPlayerInfo?.role]);
 
 
   // --- 2. Actions ---
@@ -80,13 +82,24 @@ const GameApp = () => {
     if (!userName.trim()) return;
     setLoading(true);
     const newUid = crypto.randomUUID();
+    
     try {
       const res = await fetch(`${API_URL}/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uid: newUid, name: userName, isResearcher: isResearcher })
+        body: JSON.stringify({ 
+            uid: newUid, 
+            name: userName
+        })
       });
-      if (res.ok) setUserId(newUid);
+      
+      if (res.ok) {
+          const data = await res.json();
+          setMyPlayerInfo(data.player);
+          setUserId(newUid);
+      } else {
+        alert("Failed to join. Check URL.");
+      }
     } catch (e) {
       alert("Error connecting to server.");
     }
@@ -106,7 +119,7 @@ const GameApp = () => {
     } else if (action === 'NEXT_ROUND') {
       endpoint = '/admin/next_round';
     } else if (action === 'RESET_SERVER') {
-      if(!confirm("⚠️ ARE YOU SURE? This will delete all data and reset the experiment.")) return;
+      if(!confirm("⚠️ ARE YOU SURE? This will delete all data.")) return;
       endpoint = '/reset_server';
     }
 
@@ -116,10 +129,7 @@ const GameApp = () => {
       body: JSON.stringify(body)
     });
     
-    // Force refresh
-    if(action === 'RESET_SERVER') {
-      window.location.reload(); 
-    }
+    if(action === 'RESET_SERVER') window.location.reload(); 
   };
 
   const downloadData = () => {
@@ -163,103 +173,85 @@ const GameApp = () => {
             <Database className="h-10 w-10 text-blue-600" />
           </div>
           <h1 className="mb-2 text-center text-2xl font-bold text-slate-800">Ultimatum Game</h1>
-          <p className="mb-6 text-center text-slate-500">Enter your name to join the server.</p>
-          <input type="text" placeholder="Full Name" className="mb-4 w-full rounded-lg border border-slate-300 p-3 outline-none focus:border-blue-500" value={userName} onChange={(e) => setUserName(e.target.value)} />
-          <label className="mb-6 flex items-center gap-2 text-sm text-slate-600">
-            <input type="checkbox" checked={isResearcher} onChange={(e) => setIsResearcher(e.target.checked)} />
-            I am the Researcher (Admin)
-          </label>
+          <p className="mb-6 text-center text-slate-500">
+            Enter your name to join. <br/>
+            <span className="text-xs text-slate-400">(First 3 logins become Researchers)</span>
+          </p>
+          
+          <input 
+            type="text" 
+            placeholder="Full Name" 
+            className="mb-6 w-full rounded-lg border border-slate-300 p-3 outline-none focus:border-blue-500" 
+            value={userName} 
+            onChange={(e) => setUserName(e.target.value)} 
+          />
+          
           <button onClick={registerUser} disabled={!userName || loading} className="w-full rounded-lg bg-blue-600 py-3 font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
             {loading ? "Connecting..." : "Join Experiment"}
           </button>
-          {API_URL.includes("INSERT") && <p className="mt-4 text-center text-xs text-red-500 font-bold">⚠️ API_URL NOT SET</p>}
+          
+          {API_URL.includes("INSERT") && <p className="mt-4 text-center text-xs text-red-500 font-bold">⚠️ SET API_URL IN CODE</p>}
         </div>
       </div>
     );
   }
 
-  // B. Researcher Dashboard (Advanced)
-  if (isResearcher) {
-    // Process data for table
+  // B. Researcher Dashboard
+  if (myPlayerInfo?.role === 'RESEARCHER') {
     const gamesList = fullData?.all_games ? Object.values(fullData.all_games) : [];
     const playersList = fullData?.all_players || {};
-
-    // Sort games by newest first
-    const sortedGames = gamesList.reverse();
+    const sortedGames = gamesList.reverse(); // Newest first
 
     return (
       <div className="min-h-screen bg-slate-100 p-6">
         <header className="mb-6 flex items-center justify-between rounded-xl bg-white p-6 shadow-sm">
           <div>
             <h1 className="text-2xl font-bold text-slate-800">Researcher Dashboard</h1>
-            <p className="text-sm text-slate-500">Server Status: <span className="font-mono text-blue-600">{gameState.status}</span></p>
+            <p className="text-sm text-slate-500">Status: <span className="font-mono text-blue-600">{gameState.status}</span></p>
           </div>
           <div className="text-right">
              <div className="text-2xl font-bold text-blue-600">{playerCount}</div>
-             <div className="text-xs text-slate-500">Participants</div>
+             <div className="text-xs text-slate-500">Online</div>
           </div>
         </header>
 
-        {/* CONTROLS GRID */}
         <div className="grid gap-6 md:grid-cols-3 mb-8">
-          
-          {/* 1. Game Flow */}
+          {/* Controls */}
           <div className="rounded-xl bg-white p-5 shadow-sm md:col-span-2">
-            <h2 className="mb-4 text-sm font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2"><Play className="w-4 h-4"/> Experiment Flow</h2>
+            <h2 className="mb-4 text-sm font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2"><Play className="w-4 h-4"/> Flow Controls</h2>
             <div className="grid grid-cols-3 gap-4">
-              <button 
-                onClick={() => handleResearcherAction('START_T1')}
-                disabled={gameState.status === 'TREATMENT_1'}
-                className="rounded-lg bg-blue-50 p-4 text-blue-700 hover:bg-blue-100 disabled:opacity-50 text-left border border-blue-100"
-              >
+              <button onClick={() => handleResearcherAction('START_T1')} disabled={gameState.status === 'TREATMENT_1'} className="rounded-lg bg-blue-50 p-4 text-blue-700 hover:bg-blue-100 disabled:opacity-50 text-left border border-blue-100">
                 <div className="font-bold">1. Start Anonymous</div>
-                <div className="text-xs mt-1">Fixed pairs, hidden names.</div>
               </button>
-              
-              <button 
-                onClick={() => handleResearcherAction('START_T2')}
-                disabled={gameState.status === 'TREATMENT_2'}
-                className="rounded-lg bg-purple-50 p-4 text-purple-700 hover:bg-purple-100 disabled:opacity-50 text-left border border-purple-100"
-              >
+              <button onClick={() => handleResearcherAction('START_T2')} disabled={gameState.status === 'TREATMENT_2'} className="rounded-lg bg-purple-50 p-4 text-purple-700 hover:bg-purple-100 disabled:opacity-50 text-left border border-purple-100">
                  <div className="font-bold">2. Start Known</div>
-                 <div className="text-xs mt-1">Shuffle pairs, show names.</div>
               </button>
-
-              <button 
-                onClick={() => handleResearcherAction('NEXT_ROUND')}
-                className="rounded-lg bg-slate-800 p-4 text-white hover:bg-slate-900 text-left shadow-lg"
-              >
-                 <div className="font-bold flex items-center gap-2">Next Round <Play className="w-4 h-4 fill-current"/></div>
-                 <div className="text-xs mt-1 text-slate-400">Current: {gameState.sub_round} / 4</div>
+              <button onClick={() => handleResearcherAction('NEXT_ROUND')} className="rounded-lg bg-slate-800 p-4 text-white hover:bg-slate-900 text-left shadow-lg">
+                 <div className="font-bold">Next Round</div>
+                 <div className="text-xs text-slate-400">Current: {gameState.sub_round}/4</div>
               </button>
             </div>
           </div>
 
-          {/* 2. Data Management */}
+          {/* Admin Tools */}
           <div className="rounded-xl bg-white p-5 shadow-sm">
-             <h2 className="mb-4 text-sm font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2"><Database className="w-4 h-4"/> Data Admin</h2>
+             <h2 className="mb-4 text-sm font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2"><Database className="w-4 h-4"/> Admin</h2>
              <div className="space-y-3">
                <button onClick={downloadData} className="flex w-full items-center justify-between rounded bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700 hover:bg-emerald-100 border border-emerald-100">
-                 <span>Download JSON</span>
-                 <Download className="w-4 h-4"/>
+                 <span>Download Data</span> <Download className="w-4 h-4"/>
                </button>
                <button onClick={() => handleResearcherAction('RESET_SERVER')} className="flex w-full items-center justify-between rounded bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 hover:bg-red-100 border border-red-100">
-                 <span>Reset Server</span>
-                 <Trash2 className="w-4 h-4"/>
+                 <span>Reset Server</span> <Trash2 className="w-4 h-4"/>
                </button>
              </div>
           </div>
         </div>
 
-        {/* REAL TIME DATA TABLE */}
+        {/* Live Data Table */}
         <div className="rounded-xl bg-white shadow-sm overflow-hidden">
           <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex justify-between items-center">
-             <h2 className="font-bold text-slate-700 flex items-center gap-2">
-               <FileText className="w-5 h-5 text-slate-400"/> Live Game Data
-             </h2>
-             <span className="text-xs font-mono text-slate-400 flex items-center gap-1">
-               <RefreshCw className="w-3 h-3 animate-spin"/> Updating
-             </span>
+             <h2 className="font-bold text-slate-700 flex items-center gap-2"><FileText className="w-5 h-5 text-slate-400"/> Live Game Feed</h2>
+             <span className="text-xs font-mono text-slate-400 flex items-center gap-1"><RefreshCw className="w-3 h-3 animate-spin"/> Live</span>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm text-slate-600">
@@ -270,41 +262,25 @@ const GameApp = () => {
                   <th className="px-6 py-3">Offer</th>
                   <th className="px-6 py-3">Responder</th>
                   <th className="px-6 py-3">Result</th>
-                  <th className="px-6 py-3">Earnings (P / R)</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {sortedGames.length === 0 ? (
-                  <tr><td colSpan="6" className="px-6 py-8 text-center text-slate-400 italic">No games played yet.</td></tr>
+                  <tr><td colSpan="5" className="px-6 py-8 text-center text-slate-400 italic">No games played yet.</td></tr>
                 ) : (
                   sortedGames.map((g) => {
-                    const pName = playersList[g.proposer]?.name || g.proposer.slice(0,4);
-                    const rName = playersList[g.responder]?.name || g.responder.slice(0,4);
-                    const pEarn = g.earnings ? g.earnings[g.proposer] : '-';
-                    const rEarn = g.earnings ? g.earnings[g.responder] : '-';
-                    
+                    const pName = playersList[g.proposer]?.name || '...';
+                    const rName = playersList[g.responder]?.name || '...';
                     return (
                       <tr key={g.id} className="hover:bg-slate-50">
-                         <td className="px-6 py-4 font-mono text-xs">
-                           <span className="rounded bg-slate-200 px-1">T{g.id.split('_')[1]}</span> R{g.id.split('_')[2]}
-                         </td>
+                         <td className="px-6 py-4 font-mono text-xs"><span className="rounded bg-slate-200 px-1">T{g.id.split('_')[1]}</span> R{g.id.split('_')[2]}</td>
                          <td className="px-6 py-4 font-medium text-blue-700">{pName}</td>
-                         <td className="px-6 py-4">
-                           {g.offer !== null ? <span className="font-bold">${g.offer}</span> : <span className="text-slate-300">Thinking...</span>}
-                         </td>
+                         <td className="px-6 py-4 font-bold">{g.offer !== null ? `$${g.offer}` : '...'}</td>
                          <td className="px-6 py-4 font-medium text-purple-700">{rName}</td>
                          <td className="px-6 py-4">
                             {g.status === 'COMPLETED' ? (
-                               <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-bold ${g.response === 'ACCEPTED' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                                 {g.response === 'ACCEPTED' ? <CheckCircle className="w-3 h-3"/> : <Shield className="w-3 h-3"/>}
-                                 {g.response}
-                               </span>
-                            ) : (
-                              <span className="text-xs text-slate-400">In Progress</span>
-                            )}
-                         </td>
-                         <td className="px-6 py-4 font-mono text-xs">
-                            ${pEarn} / ${rEarn}
+                               <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${g.response === 'ACCEPTED' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{g.response}</span>
+                            ) : <span className="text-slate-400 text-xs">Active</span>}
                          </td>
                       </tr>
                     );
@@ -318,15 +294,13 @@ const GameApp = () => {
     );
   }
 
-  // C. Lobby
+  // C. Lobby (Participant)
   if (gameState.status === 'LOBBY' || gameState.status === 'WAITING_NEXT_PHASE') {
     return (
       <div className="flex h-screen flex-col items-center justify-center bg-slate-50 text-center">
-        <div className="animate-pulse rounded-full bg-blue-100 p-6">
-          <RotateCcw className="h-10 w-10 text-blue-600" />
-        </div>
+        <div className="animate-pulse rounded-full bg-blue-100 p-6"><RotateCcw className="h-10 w-10 text-blue-600" /></div>
         <h2 className="mt-6 text-xl font-bold text-slate-800">Waiting for Researcher...</h2>
-        <p className="mt-8 rounded-full bg-slate-200 px-4 py-1 text-xs text-slate-500">Your ID: {userId}</p>
+        <p className="mt-8 rounded-full bg-slate-200 px-4 py-1 text-xs text-slate-500">ID: {userId}</p>
       </div>
     );
   }
@@ -376,16 +350,12 @@ const GameApp = () => {
                   {myGame.status === 'WAITING_OFFER' && (
                     <div className="grid grid-cols-5 gap-2">
                        {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((amt) => (
-                         <button key={amt} onClick={() => makeOffer(amt)} className="rounded bg-blue-50 py-3 font-bold text-blue-600 hover:bg-blue-600 hover:text-white">
-                           ${amt}
-                         </button>
+                         <button key={amt} onClick={() => makeOffer(amt)} className="rounded bg-blue-50 py-3 font-bold text-blue-600 hover:bg-blue-600 hover:text-white">${amt}</button>
                        ))}
                     </div>
                   )}
                   {myGame.status === 'OFFER_MADE' && (
-                    <div className="rounded bg-yellow-50 p-4 text-center text-yellow-800">
-                      Waiting for partner response to ${myGame.offer}...
-                    </div>
+                    <div className="rounded bg-yellow-50 p-4 text-center text-yellow-800">Waiting for partner...</div>
                   )}
                 </>
               )}
